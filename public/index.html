@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PodPod 🎧</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎧</text></svg>">
+</head>
+<body>
+    <header>
+        <h1>PodPod 🎧</h1>
+        <div class="search-container">
+            <input type="text" id="search-input" placeholder="Search episodes... 🔍">
+            <button id="clear-search-btn">✕</button>
+            <button id="search-btn">Search</button>
+        </div>
+    </header>
+
+    <main>
+        <aside id="sidebar">
+            <h3>Feeds 📡</h3>
+            <ul id="feeds-list">
+                <li class="active" data-id="">All Feeds</li>
+                <!-- Feeds populated here -->
+            </ul>
+            <button id="check-feeds-btn">Check for New Episodes 🔄</button>
+        </aside>
+
+        <section id="content">
+            <div id="status-filters">
+                <button class="active" data-status="">All</button>
+                <button data-status="pending">Pending ⏳</button>
+                <button data-status="downloading">Downloading 📥</button>
+                <button data-status="completed">Completed ✅</button>
+                <button data-status="failed">Failed ❌</button>
+            </div>
+
+            <div id="episodes-container">
+                <!-- Episodes populated here -->
+            </div>
+
+            <div id="pagination">
+                <button id="prev-btn">◀ Previous</button>
+                <span id="page-info">Page 1</span>
+                <button id="next-btn">Next ▶</button>
+            </div>
+        </section>
+    </main>
+
+    <div id="queue-drawer">
+        <div id="queue-header">
+            <h3>Queue 📥 (<span id="queue-count">0</span>)</h3>
+        </div>
+        <div id="queue-list">
+            <!-- Queue items populated here -->
+        </div>
+    </div>
+
+    <div id="player-container">
+        <div id="player-info">
+            <span id="playing-title">Select an episode to play</span>
+        </div>
+        <audio id="audio-player" controls>
+            Your browser does not support the audio element.
+        </audio>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

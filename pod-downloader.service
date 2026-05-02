@@ -1,0 +1,17 @@
+[Unit]
+Description=Podcast Downloader and Web UI
+After=network.target
+
+[Service]
+Type=simple
+User=user
+WorkingDirectory=/disk/Pod/script
+ExecStart=/usr/bin/bash /disk/Pod/script/start.sh
+Restart=always
+RestartSec=10
+Environment=PORT=3456
+Environment=STORAGE_ROOT=/disk/Pod
+Environment=DB_PATH=/disk/Pod/script/podcasts.db
+
+[Install]
+WantedBy=multi-user.target
