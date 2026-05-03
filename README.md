@@ -1,6 +1,8 @@
-# Pod Downloader
+# PodPod
 
-A simple tool to download and manage podcast feeds.
+A simple tool to download and play podcast feeds.
+
+![Screenshot](screenshot.png)
 
 ## Prerequisites
 
@@ -24,4 +26,10 @@ To start the application:
 ./start.sh
 ```
 
-The application will initialize the database if it doesn't exist and start the server.
+The application will initialize the database if it doesn't exist and start the server. If `feed.opml` exists this populates the initial set of feeds.
+
+## Add a feed
+
+```
+./add-feed.js {feed-url}
+```
