@@ -69,6 +69,11 @@ async function loadEpisodes() {
     const data = await res.json();
 
     episodesContainer.innerHTML = '';
+    if (data.episodes.length === 0) {
+        episodesContainer.innerHTML = '<div class="static-message">No episodes found yet... sync is in progress. ⏳</div>';
+        return;
+    }
+
     data.episodes.forEach(ep => {
         const card = document.createElement('div');
         card.className = 'episode-card';
@@ -197,11 +202,17 @@ function startPollingQueue() {
 
 checkFeedsBtn.addEventListener('click', async () => {
     checkFeedsBtn.disabled = true;
-    checkFeedsBtn.textContent = 'Checking... 🔄';
+    checkFeedsBtn.textContent = 'Syncing... ⚙️';
+    
+    // Provide visual feedback in the episodes container too
+    episodesContainer.innerHTML = '<div class="spinner">Syncing new feed data... ⚙️</div>';
+    
     await fetch('/api/check', { method: 'POST' });
+    
+    // Wait a moment for worker to do the initial ingest
     setTimeout(() => {
         checkFeedsBtn.disabled = false;
         checkFeedsBtn.textContent = 'Check for New Episodes 🔄';
         loadEpisodes();
-    }, 2000);
+    }, 3000);
 });
