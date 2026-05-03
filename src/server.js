@@ -9,15 +9,23 @@ const port = process.env.PORT || 3000;
 
 // Simple in-memory cache
 let cache = {
-  episodes: [],
-  lastUpdated: 0,
+  episodes: {},
+  countCache: {},
   ttl: 1000 * 5 // 5 seconds
 };
 
 function getCachedEpisodes(query, params) {
   const cacheKey = JSON.stringify({ query, params });
-  if (cache[cacheKey] && (Date.now() - cache[cacheKey].timestamp < cache.ttl)) {
-    return cache[cacheKey].data;
+  if (cache.episodes[cacheKey] && (Date.now() - cache.episodes[cacheKey].timestamp < cache.ttl)) {
+    return cache.episodes[cacheKey].data;
+  }
+  return null;
+}
+
+function getCachedCount(conditions, params) {
+  const cacheKey = JSON.stringify({ conditions, params });
+  if (cache.countCache[cacheKey] && (Date.now() - cache.countCache[cacheKey].timestamp < cache.ttl)) {
+    return cache.countCache[cacheKey].total;
   }
   return null;
 }
@@ -58,14 +66,19 @@ app.get('/api/episodes', (req, res) => {
 
   const episodes = db.prepare(query).all(...params);
   
-  let countQuery = 'SELECT COUNT(*) as total FROM episodes e';
-  if (conditions.length > 0) countQuery += ' WHERE ' + conditions.join(' AND ');
-  const { total } = db.prepare(countQuery).get(...params.slice(0, -2));
+  let total = getCachedCount(conditions, params.slice(0, -2));
+  if (total === null) {
+      let countQuery = 'SELECT COUNT(*) as total FROM episodes e';
+      if (conditions.length > 0) countQuery += ' WHERE ' + conditions.join(' AND ');
+      const result = db.prepare(countQuery).get(...params.slice(0, -2));
+      total = result.total;
+      cache.countCache[JSON.stringify({ conditions, params: params.slice(0, -2) })] = { total, timestamp: Date.now() };
+  }
 
   const result = { episodes, total, page: parseInt(page), limit: parseInt(limit) };
   
   // Store in cache
-  cache[JSON.stringify({ query, params })] = { data: result, timestamp: Date.now() };
+  cache.episodes[JSON.stringify({ query, params })] = { data: result, timestamp: Date.now() };
 
   res.json(result);
 });

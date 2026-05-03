@@ -39,7 +39,7 @@ async function loadFeeds() {
             li.classList.add('active');
             
             // Immediate feedback: clear content area or show spinner
-            episodesContainer.innerHTML = '<div class="spinner">Loading...</div>';
+            episodesContainer.innerHTML = '<div class="spinner">🎧</div>';
             
             currentFeedId = feed.id;
             currentPage = 1;
@@ -159,8 +159,15 @@ nextBtn.addEventListener('click', () => {
     loadEpisodes();
 });
 
+const queueDrawer = document.getElementById('queue-drawer');
+const queueHeader = document.getElementById('queue-header');
+
 // Queue Polling
 function startPollingQueue() {
+    queueHeader.addEventListener('click', () => {
+        queueDrawer.classList.toggle('collapsed');
+    });
+    
     setInterval(async () => {
         const res = await fetch('/api/queue');
         const data = await res.json();

@@ -3,9 +3,11 @@ const path = require('path');
 const { pipeline } = require('stream/promises');
 const Parser = require('rss-parser');
 const axios = require('axios');
+const { default: PQueue } = require('p-queue'); // Re-introduce p-queue
 const db = require('../db');
 
 const parser = new Parser();
+const downloadQueue = new PQueue({ concurrency: 5 }); // Limit concurrency
 const STORAGE_ROOT = process.env.STORAGE_ROOT || path.join(__dirname, '../data');
 
 // Track sync state
@@ -67,7 +69,7 @@ async function downloadEpisode(episode) {
     if (newAttempts < 3) {
       downloadAttempts.set(episode.id, newAttempts);
       console.warn(`Download failed for ${episode.title} (attempt ${newAttempts}), retrying in ${newAttempts * 5} minutes...`);
-      setTimeout(() => downloadEpisode(episode), newAttempts * 5 * 60 * 1000);
+      setTimeout(() => downloadQueue.add(() => downloadEpisode(episode)), newAttempts * 5 * 60 * 1000);
       db.prepare('UPDATE episodes SET download_status = ?, error_message = ? WHERE id = ?')
         .run('pending', `Attempt ${newAttempts} failed: ${error.message}`, episode.id);
     } else {
@@ -125,7 +127,7 @@ setInterval(archiveSyncWorker, 60 * 1000);
 // Initial queue resume
 const pending = db.prepare("SELECT * FROM episodes WHERE download_status IN ('pending', 'downloading')").all();
 for (const ep of pending) {
-  downloadEpisode(ep).catch(console.error);
+  downloadQueue.add(() => downloadEpisode(ep));
 }
 
 module.exports = {
