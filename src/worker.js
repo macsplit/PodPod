@@ -12,66 +12,39 @@ const STORAGE_ROOT = process.env.STORAGE_ROOT || path.join(__dirname, '../data')
 
 // Track sync state
 let syncState = {
-  feedIndex: 0
+  feedIndex: 0,
+  globalPauseUntil: 0,
+  failedFeeds: new Set()
 };
 
-// Track attempts per episode
-let downloadAttempts = new Map();
+// ... inside downloadEpisode catch block:
 
-async function downloadEpisode(episode) {
-  const attempts = downloadAttempts.get(episode.id) || 0;
-  
-  const feedDir = path.join(STORAGE_ROOT, (episode.feed_title || 'unknown').replace(/[<>:"/\\|?*]/g, '_'));
-  if (!fs.existsSync(feedDir)) {
-    fs.mkdirSync(feedDir, { recursive: true });
-  }
-
-  const fileName = path.basename(new URL(episode.enclosure_url).pathname) || `${episode.id}.mp3`;
-  const filePath = path.join(feedDir, fileName);
-
-  db.prepare('UPDATE episodes SET download_status = ?, progress = 0, file_path = ? WHERE id = ?')
-    .run('downloading', filePath, episode.id);
-
-  try {
-    const response = await axios({
-      method: 'get',
-      url: episode.enclosure_url,
-      responseType: 'stream'
-    });
-
-    const totalLength = parseInt(response.headers['content-length'], 10);
-    let downloadedLength = 0;
-
-    await pipeline(
-      response.data,
-      async function* (source) {
-        for await (const chunk of source) {
-          downloadedLength += chunk.length;
-          if (totalLength) {
-            const progress = Math.round((downloadedLength / totalLength) * 100);
-            if (progress % 5 === 0) {
-              db.prepare('UPDATE episodes SET progress = ? WHERE id = ?').run(progress, episode.id);
-            }
-          }
-          yield chunk;
-        }
-      },
-      fs.createWriteStream(filePath)
-    );
-
-    db.prepare('UPDATE episodes SET download_status = ?, progress = 100 WHERE id = ?')
-      .run('completed', episode.id);
-    downloadAttempts.delete(episode.id);
   } catch (error) {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     
-    const newAttempts = attempts + 1;
-    if (newAttempts < 3) {
-      downloadAttempts.set(episode.id, newAttempts);
-      console.warn(`Download failed for ${episode.title} (attempt ${newAttempts}), retrying in ${newAttempts * 5} minutes...`);
-      setTimeout(() => downloadQueue.add(() => downloadEpisode(episode)), newAttempts * 5 * 60 * 1000);
+    // Check for global outage (track unique failed feeds)
+    syncState.failedFeeds.add(episode.feed_id);
+    
+    // Get count of pending/downloading to check percentage failure
+    const activeTasks = db.prepare('SELECT COUNT(*) as count FROM episodes WHERE download_status IN ("pending", "downloading")').get().count;
+    const failureRate = activeTasks > 0 ? (syncState.failedFeeds.size / Math.max(activeTasks, 5)) : 0;
+
+    if (syncState.failedFeeds.size >= 5 || failureRate >= 0.5) {
+      console.error(`Failure alert (Feeds: ${syncState.failedFeeds.size}, Active: ${activeTasks}). Initiating global pause for 1 hour.`);
+      syncState.globalPauseUntil = Date.now() + 60 * 60 * 1000;
+      syncState.failedFeeds.clear();
+    }
+    
+    const nextAttemptIndex = attempts; // attempts 0, 1, 2, 3
+    if (nextAttemptIndex < RETRY_SCHEDULE_MINUTES.length) {
+      const waitTimeMinutes = RETRY_SCHEDULE_MINUTES[nextAttemptIndex];
+      downloadAttempts.set(episode.id, attempts + 1);
+      
+      console.warn(`Download failed for ${episode.title} (attempt ${nextAttemptIndex + 1}), retrying in ${waitTimeMinutes} minutes...`);
+      setTimeout(() => downloadQueue.add(() => downloadEpisode(episode)), waitTimeMinutes * 60 * 1000);
+      
       db.prepare('UPDATE episodes SET download_status = ?, error_message = ? WHERE id = ?')
-        .run('pending', `Attempt ${newAttempts} failed: ${error.message}`, episode.id);
+        .run('pending', `Attempt ${nextAttemptIndex + 1} failed: ${error.message}`, episode.id);
     } else {
       downloadAttempts.delete(episode.id);
       db.prepare('UPDATE episodes SET download_status = ?, error_message = ? WHERE id = ?')
