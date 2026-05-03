@@ -69,11 +69,6 @@ async function loadEpisodes() {
     const data = await res.json();
 
     episodesContainer.innerHTML = '';
-    if (data.episodes.length === 0) {
-        episodesContainer.innerHTML = '<div class="static-message">No episodes found yet... sync is in progress. ⏳</div>';
-        return;
-    }
-
     data.episodes.forEach(ep => {
         const card = document.createElement('div');
         card.className = 'episode-card';
@@ -93,6 +88,10 @@ async function loadEpisodes() {
         `;
         episodesContainer.appendChild(card);
     });
+
+    if (data.episodes.length === 0) {
+        episodesContainer.innerHTML = '<div class="static-message">No episodes found for this feed. 😶</div>';
+    }
 
     // Event listeners for play buttons
     document.querySelectorAll('.play-btn').forEach(btn => {
