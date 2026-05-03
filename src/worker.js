@@ -6,7 +6,7 @@ const axios = require('axios');
 const db = require('../db');
 
 const parser = new Parser();
-const STORAGE_ROOT = process.env.STORAGE_ROOT || '/disk/Pod';
+const STORAGE_ROOT = process.env.STORAGE_ROOT || path.join(__dirname, '../data');
 
 // Track sync state
 let syncState = {

@@ -2,3 +2,4 @@ node_modules
 podcasts.db
 podcasts.db-shm
 podcasts.db-wal
+data/

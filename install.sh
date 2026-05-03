@@ -4,7 +4,9 @@
 npm install
 
 # Initialize database
-# We remove the existing one if it exists to ensure a clean start for new environments
 rm -f podcasts.db
 
-echo "Installation complete. Database initialized."
+# Ensure data directory exists
+mkdir -p data
+
+echo "Installation complete. Database initialized and data directory ready."

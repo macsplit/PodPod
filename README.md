@@ -26,7 +26,14 @@ To start the application:
 ./start.sh
 ```
 
-The application will initialize the database if it doesn't exist and start the server. If `feed.opml` exists this populates the initial set of feeds.
+The application stores downloaded podcasts in the `data/` directory by default. You can change this by setting the `STORAGE_ROOT` environment variable:
+
+```bash
+STORAGE_ROOT=/path/to/your/storage ./start.sh
+```
+
+The application will initialize the database if it doesn't exist and start the server.
+ If `feed.opml` exists this populates the initial set of feeds.
 
 ## Add a feed
 
