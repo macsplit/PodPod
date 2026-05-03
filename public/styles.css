@@ -126,11 +126,10 @@ aside {
     border-left: 4px solid var(--highlight-4);
 }
 
-.episode-card h4 {
-    margin-top: 0;
-    margin-bottom: 0.5rem;
-    font-size: 1rem;
-    color: var(--highlight-2);
+.spinner {
+    padding: 2rem;
+    text-align: center;
+    color: var(--accent-color);
 }
 
 .episode-meta {

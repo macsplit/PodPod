@@ -7,6 +7,21 @@ const fs = require('fs');
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Simple in-memory cache
+let cache = {
+  episodes: [],
+  lastUpdated: 0,
+  ttl: 1000 * 5 // 5 seconds
+};
+
+function getCachedEpisodes(query, params) {
+  const cacheKey = JSON.stringify({ query, params });
+  if (cache[cacheKey] && (Date.now() - cache[cacheKey].timestamp < cache.ttl)) {
+    return cache[cacheKey].data;
+  }
+  return null;
+}
+
 app.use(pino);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
@@ -37,13 +52,22 @@ app.get('/api/episodes', (req, res) => {
   query += ' ORDER BY e.pub_date DESC LIMIT ? OFFSET ?';
   params.push(limit, offset);
 
+  // Attempt to serve from cache
+  const cached = getCachedEpisodes(query, params);
+  if (cached) return res.json(cached);
+
   const episodes = db.prepare(query).all(...params);
   
   let countQuery = 'SELECT COUNT(*) as total FROM episodes e';
   if (conditions.length > 0) countQuery += ' WHERE ' + conditions.join(' AND ');
   const { total } = db.prepare(countQuery).get(...params.slice(0, -2));
 
-  res.json({ episodes, total, page: parseInt(page), limit: parseInt(limit) });
+  const result = { episodes, total, page: parseInt(page), limit: parseInt(limit) };
+  
+  // Store in cache
+  cache[JSON.stringify({ query, params })] = { data: result, timestamp: Date.now() };
+
+  res.json(result);
 });
 
 app.get('/api/queue', (req, res) => {

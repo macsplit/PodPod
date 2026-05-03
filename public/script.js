@@ -37,6 +37,10 @@ async function loadFeeds() {
         li.addEventListener('click', () => {
             document.querySelectorAll('#feeds-list li').forEach(el => el.classList.remove('active'));
             li.classList.add('active');
+            
+            // Immediate feedback: clear content area or show spinner
+            episodesContainer.innerHTML = '<div class="spinner">Loading...</div>';
+            
             currentFeedId = feed.id;
             currentPage = 1;
             loadEpisodes();
@@ -181,7 +185,7 @@ function startPollingQueue() {
                 loadEpisodes();
             }
         }
-    }, 5000);
+    }, 10000);
 }
 
 checkFeedsBtn.addEventListener('click', async () => {

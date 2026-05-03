@@ -10,8 +10,7 @@ const STORAGE_ROOT = process.env.STORAGE_ROOT || '/disk/Pod';
 
 // Track sync state
 let syncState = {
-  feedIndex: 0,
-  pauseUntil: 0
+  feedIndex: 0
 };
 
 // Track attempts per episode
@@ -68,7 +67,6 @@ async function downloadEpisode(episode) {
     if (newAttempts < 3) {
       downloadAttempts.set(episode.id, newAttempts);
       console.warn(`Download failed for ${episode.title} (attempt ${newAttempts}), retrying in ${newAttempts * 5} minutes...`);
-      // Re-queue after back-off without blocking other downloads
       setTimeout(() => downloadEpisode(episode), newAttempts * 5 * 60 * 1000);
       db.prepare('UPDATE episodes SET download_status = ?, error_message = ? WHERE id = ?')
         .run('pending', `Attempt ${newAttempts} failed: ${error.message}`, episode.id);
@@ -81,46 +79,48 @@ async function downloadEpisode(episode) {
   }
 }
 
-async function archiveSyncWorker() {
-  if (Date.now() < syncState.pauseUntil) return;
-
-  const feeds = db.prepare('SELECT * FROM feeds').all();
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < 30 * 60 * 1000) {
-    if (syncState.feedIndex >= feeds.length) syncState.feedIndex = 0;
-    const feed = feeds[syncState.feedIndex];
-    
-    try {
-      const feedData = await parser.parseURL(feed.xml_url);
-      const allEpisodes = feedData.items;
-
-      for (const item of allEpisodes) {
-        const guid = item.guid || item.link || item.enclosure?.url;
-        if (!guid) continue;
-        
-        const existing = db.prepare('SELECT id FROM episodes WHERE guid = ?').get(guid);
-        if (!existing) {
-          const pubDate = item.pubDate ? new Date(item.pubDate).getTime() : Date.now();
-          const enclosureUrl = item.enclosure?.url;
-          if (!enclosureUrl) continue;
-
-          db.prepare(`
-            INSERT INTO episodes (feed_id, guid, title, link, pub_date, description, enclosure_url)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).run(feed.id, guid, item.title, item.link, pubDate, item.contentSnippet || item.content, enclosureUrl);
-        }
-      }
-    } catch (err) {
-      console.error(`Archival sync failed for ${feed.title}:`, err.message);
-    }
-    syncState.feedIndex++;
-    await new Promise(r => setTimeout(r, 1000));
-  }
-
-  syncState.pauseUntil = Date.now() + 5 * 60 * 1000;
-  console.log('Archival sync paused.');
+// Set low priority for background worker
+if (process.setPriority) {
+  try { process.setPriority(19); } catch (e) { console.warn('Could not set priority', e); }
 }
+
+async function archiveSyncWorker() {
+  const feeds = db.prepare('SELECT * FROM feeds').all();
+  if (feeds.length === 0) return;
+
+  if (syncState.feedIndex >= feeds.length) syncState.feedIndex = 0;
+  const feed = feeds[syncState.feedIndex];
+  
+  try {
+    const feedData = await parser.parseURL(feed.xml_url);
+    const allEpisodes = feedData.items;
+
+    for (const item of allEpisodes) {
+      const guid = item.guid || item.link || item.enclosure?.url;
+      if (!guid) continue;
+      
+      const existing = db.prepare('SELECT id FROM episodes WHERE guid = ?').get(guid);
+      if (!existing) {
+        const pubDate = item.pubDate ? new Date(item.pubDate).getTime() : Date.now();
+        const enclosureUrl = item.enclosure?.url;
+        if (!enclosureUrl) continue;
+
+        db.prepare(`
+          INSERT INTO episodes (feed_id, guid, title, link, pub_date, description, enclosure_url)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(feed.id, guid, item.title, item.link, pubDate, item.contentSnippet || item.content, enclosureUrl);
+      }
+    }
+    console.log(`Syncing: ${feed.title} completed.`);
+  } catch (err) {
+    console.error(`Archival sync failed for ${feed.title}:`, err.message);
+  }
+  
+  syncState.feedIndex++;
+}
+
+// Background scheduler - run sync every minute
+setInterval(archiveSyncWorker, 60 * 1000);
 
 // Initial queue resume
 const pending = db.prepare("SELECT * FROM episodes WHERE download_status IN ('pending', 'downloading')").all();
