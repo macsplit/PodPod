@@ -83,6 +83,8 @@ async function archiveSyncWorker() {
                INSERT INTO episodes (feed_id, guid, title, link, pub_date, description, enclosure_url)
                VALUES (?, ?, ?, ?, ?, ?, ?)
              `).run(feed.id, guid, item.title, item.link, pubDate, item.contentSnippet || item.content, enclosureUrl);
+             
+             addToQueue(guid);
            }
         }
       } catch (err) {
@@ -207,7 +209,7 @@ async function downloadEpisode(episode) {
 // Start-up: queue all pending episodes
 async function resumeDownloads() {
   const pending = db.prepare(`
-    SELECT guid, pub_date FROM episodes 
+    SELECT guid, pub_date, download_status FROM episodes 
     WHERE download_status = 'pending' OR download_status = 'downloading'
     ORDER BY pub_date DESC
   `).all();
@@ -215,7 +217,7 @@ async function resumeDownloads() {
   for (const ep of pending) {
     // If it was 'downloading', we reset it to 'pending' to restart
     if (ep.download_status === 'downloading') {
-        db.prepare('UPDATE episodes SET download_status = "pending", progress = 0 WHERE guid = ?').run(ep.guid);
+        db.prepare("UPDATE episodes SET download_status = 'pending', progress = 0 WHERE guid = ?").run(ep.guid);
     }
     addToQueue(ep.guid);
   }

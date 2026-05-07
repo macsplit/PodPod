@@ -1,3 +1,5 @@
+sync-from-nuc.exclude
+sync-from-nuc.sh
 node_modules
 podcasts.db
 podcasts.db-shm

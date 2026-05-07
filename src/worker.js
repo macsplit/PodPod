@@ -135,10 +135,13 @@ async function archiveSyncWorker() {
         const enclosureUrl = item.enclosure?.url;
         if (!enclosureUrl) continue;
 
-        db.prepare(`
+        const result = db.prepare(`
           INSERT INTO episodes (feed_id, guid, title, link, pub_date, description, enclosure_url)
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `).run(feed.id, guid, item.title, item.link, pubDate, item.contentSnippet || item.content, enclosureUrl);
+        
+        const episode = db.prepare('SELECT * FROM episodes WHERE id = ?').get(result.lastInsertRowid);
+        downloadQueue.add(() => downloadEpisode(episode));
       }
     }
   } catch (err) {
@@ -151,7 +154,12 @@ setInterval(archiveSyncWorker, 60 * 1000);
 
 const pending = db.prepare("SELECT * FROM episodes WHERE download_status IN ('pending', 'downloading')").all();
 for (const ep of pending) {
+  if (ep.download_status === 'downloading') {
+    db.prepare("UPDATE episodes SET download_status = 'pending', progress = 0 WHERE id = ?").run(ep.id);
+    ep.download_status = 'pending';
+    ep.progress = 0;
+  }
   downloadQueue.add(() => downloadEpisode(ep));
 }
 
-module.exports = { archiveSyncWorker, downloadEpisode };
+module.exports = { archiveSyncWorker, downloadEpisode, downloadQueue };
