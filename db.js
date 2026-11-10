@@ -53,4 +53,16 @@ db.exec(`
   END;
 `);
 
+// Migrations: add columns introduced after initial release
+for (const stmt of [
+  'ALTER TABLE feeds ADD COLUMN etag TEXT',
+  'ALTER TABLE feeds ADD COLUMN last_modified TEXT'
+]) {
+  try {
+    db.exec(stmt);
+  } catch (err) {
+    if (!/duplicate column/i.test(err.message)) throw err;
+  }
+}
+
 module.exports = db;
