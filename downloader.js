@@ -46,6 +46,26 @@ async function initFeedsFromOpml(opmlPath) {
   return feeds.length;
 }
 
+// Fetches a feed only if it changed since the last check, using ETag/Last-Modified.
+// Returns null when the feed is unchanged (304), skipping the XML parse entirely.
+async function fetchFeedIfChanged(feed) {
+  const headers = {};
+  if (feed.etag) headers['If-None-Match'] = feed.etag;
+  if (feed.last_modified) headers['If-Modified-Since'] = feed.last_modified;
+
+  const response = await axios.get(feed.xml_url, {
+    headers,
+    validateStatus: (status) => status === 200 || status === 304
+  });
+
+  db.prepare('UPDATE feeds SET etag = ?, last_modified = ? WHERE id = ?')
+    .run(response.headers['etag'] || null, response.headers['last-modified'] || null, feed.id);
+
+  if (response.status === 304) return null;
+
+  return parser.parseString(response.data);
+}
+
 // Background worker that cycles through feeds and processes them in small batches
 async function archiveSyncWorker() {
   if (syncState.active) return;
@@ -56,47 +76,50 @@ async function archiveSyncWorker() {
   const feeds = db.prepare('SELECT * FROM feeds').all();
 
   try {
-    while (Date.now() - startTime < 30 * 60 * 1000) { // 30 min duty cycle
+    while (Date.now() - startTime < 10 * 60 * 1000) { // 10 min duty cycle
       if (syncState.feedIndex >= feeds.length) syncState.feedIndex = 0;
       const feed = feeds[syncState.feedIndex];
-      
+
       try {
         console.log(`Archival sync: ${feed.title}`);
-        const feedData = await parser.parseURL(feed.xml_url);
-        
-        // Find episodes not in DB
-        const allEpisodes = feedData.items;
-        allEpisodes.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-        
-        // Find existing to skip
-        for (const item of allEpisodes) {
-           const guid = item.guid || item.link || item.enclosure?.url;
-           if (!guid) continue;
-           
-           const existing = db.prepare('SELECT id FROM episodes WHERE guid = ?').get(guid);
-           if (!existing) {
-             const pubDate = item.pubDate ? new Date(item.pubDate).getTime() : Date.now();
-             const enclosureUrl = item.enclosure?.url;
-             if (!enclosureUrl) continue;
+        const feedData = await fetchFeedIfChanged(feed);
+        if (!feedData) {
+          console.log(`Archival sync: ${feed.title} unchanged, skipping`);
+        } else {
+          // Find episodes not in DB
+          const allEpisodes = feedData.items;
+          allEpisodes.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
 
-             db.prepare(`
-               INSERT INTO episodes (feed_id, guid, title, link, pub_date, description, enclosure_url)
-               VALUES (?, ?, ?, ?, ?, ?, ?)
-             `).run(feed.id, guid, item.title, item.link, pubDate, item.contentSnippet || item.content, enclosureUrl);
-             
-             addToQueue(guid);
-           }
+          // Find existing to skip
+          for (const item of allEpisodes) {
+             const guid = item.guid || item.link || item.enclosure?.url;
+             if (!guid) continue;
+
+             const existing = db.prepare('SELECT id FROM episodes WHERE guid = ?').get(guid);
+             if (!existing) {
+               const pubDate = item.pubDate ? new Date(item.pubDate).getTime() : Date.now();
+               const enclosureUrl = item.enclosure?.url;
+               if (!enclosureUrl) continue;
+
+               db.prepare(`
+                 INSERT INTO episodes (feed_id, guid, title, link, pub_date, description, enclosure_url)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)
+               `).run(feed.id, guid, item.title, item.link, pubDate, item.contentSnippet || item.content, enclosureUrl);
+
+               addToQueue(guid);
+             }
+          }
         }
       } catch (err) {
         console.error(`Error syncing archive for ${feed.title}:`, err.message);
       }
-      
+
       syncState.feedIndex++;
       // Small sleep to yield
       await new Promise(r => setTimeout(r, 1000));
     }
   } finally {
-    syncState.pauseUntil = Date.now() + 5 * 60 * 1000; // 5 min pause
+    syncState.pauseUntil = Date.now() + 20 * 60 * 1000; // 20 min pause
     syncState.active = false;
     console.log('Archival sync paused.');
   }
@@ -107,25 +130,27 @@ async function checkFeeds() {
   const feeds = db.prepare('SELECT * FROM feeds').all();
   for (const feed of feeds) {
     try {
-      const feedData = await parser.parseURL(feed.xml_url);
-      const recent = feedData.items.slice(0, 50);
+      const feedData = await fetchFeedIfChanged(feed);
+      if (feedData) {
+        const recent = feedData.items.slice(0, 50);
 
-      for (const item of recent) {
-        const guid = item.guid || item.link || item.enclosure?.url;
-        if (!guid) continue;
+        for (const item of recent) {
+          const guid = item.guid || item.link || item.enclosure?.url;
+          if (!guid) continue;
 
-        const existing = db.prepare('SELECT id FROM episodes WHERE guid = ?').get(guid);
-        if (!existing) {
-          const pubDate = item.pubDate ? new Date(item.pubDate).getTime() : Date.now();
-          const enclosureUrl = item.enclosure?.url;
-          if (!enclosureUrl) continue;
+          const existing = db.prepare('SELECT id FROM episodes WHERE guid = ?').get(guid);
+          if (!existing) {
+            const pubDate = item.pubDate ? new Date(item.pubDate).getTime() : Date.now();
+            const enclosureUrl = item.enclosure?.url;
+            if (!enclosureUrl) continue;
 
-          db.prepare(`
-            INSERT INTO episodes (feed_id, guid, title, link, pub_date, description, enclosure_url)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).run(feed.id, guid, item.title, item.link, pubDate, item.contentSnippet || item.content, enclosureUrl);
-          
-          addToQueue(guid);
+            db.prepare(`
+              INSERT INTO episodes (feed_id, guid, title, link, pub_date, description, enclosure_url)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            `).run(feed.id, guid, item.title, item.link, pubDate, item.contentSnippet || item.content, enclosureUrl);
+
+            addToQueue(guid);
+          }
         }
       }
       db.prepare('UPDATE feeds SET last_checked = ? WHERE id = ?').run(Date.now(), feed.id);
